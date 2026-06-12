@@ -2,7 +2,7 @@
 
 Runs entirely on GitHub Actions + GitHub Pages. No server, no laptop required.
 
-- Scrapes Reddit + StockTwits sentiment every weekday at 7am NZT
+- Pulls StockTwits sentiment (plus a curated watchlist) every weekday at 7am NZT
 - Researches top tickers with Groq (free LLM API)
 - Tracks your portfolio (edit positions.json) and flags sell signals
 - Publishes a static dashboard to GitHub Pages with full history

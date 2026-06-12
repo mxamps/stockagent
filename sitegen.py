@@ -241,12 +241,41 @@ def build_run_page(run_date, all_runs, portfolio, live_prices, is_index=False):
 </div></body></html>"""
 
 
+def _placeholder_page():
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<link rel="icon" href="{FAVICON}">
+<title>Stock Intelligence</title>
+<style>body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;margin:0;color:#111 }}
+.wrap {{ max-width:760px;margin:0 auto;padding:48px 16px;text-align:center }}</style>
+</head><body><div class="wrap">
+  <div style="background:linear-gradient(135deg,#1e3a5f,#1d4ed8);border-radius:14px;padding:40px;color:#fff">
+    <div style="font-size:24px;font-weight:800">Stock Intelligence</div>
+    <p style="opacity:.85;margin-top:12px">No report generated yet today — the data sources returned no
+    tickers this run. This can happen when Reddit or StockTwits rate-limits the request.
+    The next scheduled run will try again.</p>
+    <p style="opacity:.6;font-size:12px;margin-top:16px">Last attempt: {generated}</p>
+  </div>
+</div></body></html>"""
+
+
 def generate_site(live_prices=None):
     live_prices = live_prices or {}
     os.makedirs(SITE_DIR, exist_ok=True)
+
+    # Always write .nojekyll so GitHub Pages serves the folder as-is
+    with open(os.path.join(SITE_DIR, ".nojekyll"), "w") as f:
+        f.write("")
+
     all_runs = get_all_runs()
     if not all_runs:
-        print("[Sitegen] No runs in database yet.")
+        print("[Sitegen] No runs in database yet — writing placeholder index.")
+        with open(os.path.join(SITE_DIR, "index.html"), "w") as f:
+            f.write(_placeholder_page())
         return
 
     portfolio = get_portfolio()
@@ -257,9 +286,5 @@ def generate_site(live_prices=None):
         filename = "index.html" if is_latest else f"{run_date}.html"
         with open(os.path.join(SITE_DIR, filename), "w") as f:
             f.write(html)
-
-    # .nojekyll stops GitHub Pages from processing the folder
-    with open(os.path.join(SITE_DIR, ".nojekyll"), "w") as f:
-        f.write("")
 
     print(f"[Sitegen] Generated {len(all_runs)} pages in {SITE_DIR}/")

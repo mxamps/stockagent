@@ -2,7 +2,8 @@ name: Daily Stock Report
 
 on:
   schedule:
-    # 19:00 UTC = 7:00 AM NZST (UTC+12, NZ winter). Sun-Thu UTC = Mon-Fri NZ.
+    # 19:00 UTC = 7:00 AM NZST (UTC+12). Sun-Thu UTC = Mon-Fri NZ.
+    # During NZ daylight saving (UTC+13, ~late Sep-early Apr) change to "0 18".
     - cron: "0 19 * * 0-4"
   workflow_dispatch:
 
@@ -14,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -33,6 +34,6 @@ jobs:
         run: |
           git config user.name "stock-agent-bot"
           git config user.email "actions@github.com"
-          git add data/ docs/
+          git add -A data/ docs/
           git diff --cached --quiet || git commit -m "Daily report $(date -u +%Y-%m-%d)"
           git push
