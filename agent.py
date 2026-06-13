@@ -1,22 +1,25 @@
 import re
+import time
 import requests
 from config import GROQ_API_KEY, GROQ_MODEL, GROQ_URL, LLM_TIMEOUT
 
-SYSTEM_PROMPT = """You are a cautious, data-driven stock research analyst.
+SYSTEM_PROMPT = """You are a decisive, data-driven stock research analyst.
 You receive recent news sentiment data and key financial metrics for a stock.
-Your job is to write a SHORT (150-200 word) analyst note and give a verdict.
+Your job is to write a SHORT (150-200 word) analyst note and commit to a verdict.
 
 Rules:
-- Be honest about risks. Do not hype.
-- Base your read on the news flow and fundamentals together; don't over-weight a few positive headlines.
+- Be honest about risks, but COMMIT to a clear view. Do not default to WATCH out of caution.
+- Weigh fundamentals (valuation, growth, margins, analyst view) together with news sentiment.
 - Base your verdict ONLY on the data provided.
+- Aim for a realistic spread: genuinely attractive setups are BUY, clearly troubled or
+  overvalued ones are AVOID, and only truly mixed cases are WATCH.
 - Always end with one of exactly these verdicts on its own line:
   VERDICT: BUY
   VERDICT: WATCH
   VERDICT: AVOID
-- BUY = strong fundamentals + genuine positive sentiment + reasonable valuation
-- WATCH = interesting but needs monitoring (mixed signals, high valuation, etc.)
-- AVOID = poor fundamentals, suspicious hype, or insufficient data"""
+- BUY = reasonable valuation AND (solid growth OR clearly positive catalyst) AND supportive news
+- AVOID = stretched valuation with weak growth, deteriorating fundamentals, or negative news flow
+- WATCH = genuinely mixed signals where neither BUY nor AVOID is justified"""
 
 
 def _call_groq(prompt):
@@ -35,12 +38,21 @@ def _call_groq(prompt):
         "temperature": 0.3,
         "max_tokens": 500,
     }
-    try:
-        resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=LLM_TIMEOUT)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"ERROR: {e}"
+    for attempt in range(4):
+        try:
+            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=LLM_TIMEOUT)
+            if resp.status_code == 429:
+                wait = 5 * (attempt + 1)
+                print(f"[Agent]   Groq 429, waiting {wait}s")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            if attempt == 3:
+                return f"ERROR: {e}"
+            time.sleep(3)
+    return "ERROR: Groq rate limit exceeded after retries."
 
 
 def _extract_verdict(text):

@@ -1,4 +1,5 @@
 import sys
+import time
 import logging
 from datetime import datetime
 
@@ -46,6 +47,7 @@ def run():
             continue
 
         analysis = research_ticker(ticker, sentiment, financials)
+        time.sleep(3)  # respect Groq free-tier rate limit
         if analysis["llm_summary"].startswith("ERROR"):
             log.error(f"  LLM error for {ticker}: {analysis['llm_summary']}")
 
@@ -77,6 +79,7 @@ def run():
         live_prices[ticker] = financials.get("price")
         recent = get_recent_research(ticker, days=30)
         result = generate_sell_analysis(ticker, position, financials, recent)
+        time.sleep(3)
 
         log_sell_signal(
             run_date=run_date,
