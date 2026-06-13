@@ -2,8 +2,8 @@
 
 Runs entirely on GitHub Actions + GitHub Pages. No server, no laptop required.
 
-- Pulls StockTwits sentiment (plus a curated watchlist) every weekday at 7am NZT
-- Researches top tickers with Groq (free LLM API)
+- Pulls news sentiment from Finnhub for a curated watchlist every weekday at 7am NZT
+- Researches the most positively-covered tickers with Groq (free LLM API)
 - Tracks your portfolio (edit positions.json) and flags sell signals
 - Publishes a static dashboard to GitHub Pages with full history
 - Everything (code, database, reports) lives in this repo
@@ -32,6 +32,10 @@ git push -u origin main
 Repo page -> Settings -> Secrets and variables -> Actions -> New repository secret
 - Name: GROQ_API_KEY
 - Value: gsk_... (your key)
+
+Add a second secret the same way:
+- Name: FINNHUB_API_KEY
+- Value: your Finnhub key from finnhub.io
 
 ### 3. Enable GitHub Pages
 
@@ -84,7 +88,8 @@ periods. The report will be there by ~7:15am worst case.
 - GitHub Actions: free (this uses ~100 of your 2,000 free minutes/month)
 - GitHub Pages: free
 - Groq API: free tier (14,400 requests/day; this uses ~15/day)
-- Data sources: free (Reddit RSS, StockTwits public API, Yahoo Finance)
+- Finnhub API: free tier (60 calls/min; this uses ~150/day)
+- Data source: Finnhub free tier (news sentiment + fundamentals)
 
 ## Disclaimer
 

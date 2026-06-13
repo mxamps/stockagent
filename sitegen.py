@@ -65,7 +65,7 @@ def _research_card(item):
           <div style="font-size:18px;font-weight:700">${price or 'N/A'}</div></div>
         <div><div style="font-size:11px;color:#9ca3af;text-transform:uppercase">P/E</div>
           <div style="font-size:18px;font-weight:700">{round(item['pe_ratio'], 1) if item.get('pe_ratio') else 'N/A'}</div></div>
-        <div><div style="font-size:11px;color:#9ca3af;text-transform:uppercase">Mentions</div>
+        <div><div style="font-size:11px;color:#9ca3af;text-transform:uppercase">News</div>
           <div style="font-size:18px;font-weight:700">{item.get('mentions') or 'N/A'}</div></div>
         <div><div style="font-size:11px;color:#9ca3af;text-transform:uppercase">Sentiment</div>
           <div style="font-size:18px;font-weight:700;color:{pct_color(item.get('sentiment_score', 0))}">{item.get('sentiment_score') or 'N/A'}</div></div>
@@ -188,8 +188,8 @@ def build_run_page(run_date, all_runs, portfolio, live_prices, is_index=False):
 
   <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:12px;color:#92400e;line-height:1.6">
     <strong>Not financial advice.</strong> This page is generated automatically by an AI agent
-    from social media sentiment (Reddit, StockTwits) and public financial data. Social sentiment
-    is a noisy, unreliable signal and AI-generated analysis can be wrong. Nothing here is a
+    from recent news sentiment and public financial data (Finnhub). News sentiment
+    is an imperfect signal and AI-generated analysis can be wrong. Nothing here is a
     recommendation to buy or sell any security. Always do your own research and consider
     consulting a licensed financial adviser.
   </div>
@@ -234,8 +234,7 @@ def build_run_page(run_date, all_runs, portfolio, live_prices, is_index=False):
   {avoid_cards}
 
   <div style="margin-top:32px;padding:16px;background:#fff;border-radius:10px;font-size:11px;color:#9ca3af;line-height:1.6;border:1px solid #e5e7eb">
-    Generated {generated} · Sources: r/wallstreetbets, r/stocks, r/investing, r/SecurityAnalysis,
-    StockTwits trending, Yahoo Finance · Analysis: Groq llama-3.1-8b · Not financial advice.
+    Generated {generated} · Source: Finnhub news + fundamentals · Analysis: Groq llama-3.1-8b · Not financial advice.
   </div>
 
 </div></body></html>"""

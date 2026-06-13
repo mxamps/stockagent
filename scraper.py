@@ -1,161 +1,132 @@
 import time
-import random
 import requests
-from collections import defaultdict
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from datetime import datetime, timedelta
 from config import (
-    TICKER_BLACKLIST,
-    MIN_TICKER_MENTIONS, MIN_SENTIMENT_SCORE, MIN_POSITIVE_RATIO,
+    WATCHLIST, FINNHUB_API_KEY, FINNHUB_BASE,
+    MIN_NEWS_ARTICLES, MIN_SENTIMENT_SCORE,
 )
 
-analyzer = SentimentIntensityAnalyzer()
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-]
-
-
-def _headers():
-    return {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-
-
-# A watchlist of liquid, commonly-discussed tickers as a reliable backbone.
-# StockTwits trending is layered on top of this each run.
-WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AMD", "NFLX",
-    "AVGO", "MU", "INTC", "QCOM", "ARM", "SMCI", "PLTR", "CRM", "ORCL",
-    "ADBE", "NOW", "SHOP", "UBER", "ABNB", "COIN", "HOOD", "SOFI", "PYPL",
-    "JPM", "BAC", "V", "MA", "DIS", "BABA", "NU", "MELI", "INCY", "MRVL",
-    "MSTR", "SNOW", "DDOG", "NET", "CRWD", "PANW", "SMR", "VST", "CEG",
-    "LLY", "UNH", "JNJ", "PFE", "MRNA", "XOM", "CVX", "BA", "GE", "F",
-]
+# Lightweight positive/negative word lists for scoring headlines, used as a
+# fallback when Finnhub's premium sentiment endpoint isn't available on the
+# free tier. Applied to company-news headlines we CAN fetch for free.
+POSITIVE_WORDS = {
+    "beat", "beats", "surge", "surges", "soar", "soars", "jump", "jumps",
+    "rally", "rallies", "gain", "gains", "rise", "rises", "upgrade",
+    "upgraded", "outperform", "buy", "bullish", "record", "high", "growth",
+    "profit", "strong", "boost", "boosts", "win", "wins", "approval",
+    "approved", "breakthrough", "expand", "expands", "raise", "raised",
+    "top", "tops", "exceed", "exceeds", "momentum", "rebound", "optimistic",
+}
+NEGATIVE_WORDS = {
+    "miss", "misses", "fall", "falls", "drop", "drops", "plunge", "plunges",
+    "slump", "crash", "decline", "declines", "downgrade", "downgraded",
+    "sell", "bearish", "low", "loss", "losses", "weak", "cut", "cuts",
+    "lawsuit", "investigation", "probe", "warn", "warns", "warning",
+    "concern", "concerns", "risk", "risks", "slowdown", "layoff", "layoffs",
+    "recall", "delay", "delays", "fraud", "scandal", "tumble", "sink",
+}
 
 
-def _get_with_retry(url, max_retries=3, base_delay=2):
-    for attempt in range(max_retries):
+def _get(endpoint, params):
+    params["token"] = FINNHUB_API_KEY
+    url = f"{FINNHUB_BASE}/{endpoint}"
+    for attempt in range(3):
         try:
-            resp = requests.get(url, headers=_headers(), timeout=15)
+            resp = requests.get(url, params=params, timeout=15)
             if resp.status_code == 429:
-                wait = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                print(f"[Scraper]   429, waiting {wait:.0f}s")
-                time.sleep(wait)
+                time.sleep(2 * (attempt + 1))
                 continue
             resp.raise_for_status()
-            return resp
+            return resp.json()
         except Exception as e:
-            if attempt == max_retries - 1:
+            if attempt == 2:
+                print(f"[Scraper]   {endpoint} error for {params.get('symbol','')}: {e}")
                 return None
-            time.sleep(base_delay * (2 ** attempt))
+            time.sleep(1.5)
     return None
 
 
-def _score_text(text):
-    return analyzer.polarity_scores(text)["compound"]
+def _score_headline(text):
+    words = set(text.lower().replace(",", " ").replace(".", " ").split())
+    pos = len(words & POSITIVE_WORDS)
+    neg = len(words & NEGATIVE_WORDS)
+    total = pos + neg
+    if total == 0:
+        return 0.0
+    return (pos - neg) / total
 
 
-def _fetch_stocktwits_trending():
-    url = "https://api.stocktwits.com/api/2/trending/symbols.json"
-    resp = _get_with_retry(url)
-    if not resp:
-        print("[Scraper] StockTwits trending unavailable")
+def _fetch_company_news(ticker):
+    """Free endpoint: company news from the last 7 days."""
+    today = datetime.utcnow().date()
+    week_ago = today - timedelta(days=7)
+    data = _get("company-news", {
+        "symbol": ticker,
+        "from": week_ago.isoformat(),
+        "to": today.isoformat(),
+    })
+    if not isinstance(data, list):
         return []
-    try:
-        symbols = resp.json().get("symbols", [])
-        return [s.get("symbol", "") for s in symbols
-                if s.get("symbol") and "." not in s.get("symbol", "")]
-    except Exception:
-        return []
-
-
-def _fetch_stocktwits_stream(ticker):
-    """Returns (messages, st_sentiment_counts) for a ticker."""
-    url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
-    resp = _get_with_retry(url, max_retries=2)
-    if not resp:
-        return [], {"bull": 0, "bear": 0}
-    try:
-        data = resp.json()
-        messages = data.get("messages", [])
-        bodies = []
-        bull = bear = 0
-        for m in messages[:30]:
-            bodies.append(m.get("body", ""))
-            # StockTwits has its own bull/bear labels we can use as signal
-            entities = m.get("entities", {})
-            sentiment = (entities or {}).get("sentiment") or {}
-            basic = sentiment.get("basic")
-            if basic == "Bullish":
-                bull += 1
-            elif basic == "Bearish":
-                bear += 1
-        return bodies, {"bull": bull, "bear": bear}
-    except Exception:
-        return [], {"bull": 0, "bear": 0}
+    return data
 
 
 def scrape_reddit():
-    """Name kept for compatibility. Now sources from StockTwits + watchlist."""
-    raw = defaultdict(list)
-    st_labels = {}
-
-    print("[Scraper] Fetching StockTwits trending...")
-    trending = _fetch_stocktwits_trending()
-    print(f"[Scraper] Trending: {trending[:10]}")
-
-    # Combine trending + watchlist, dedup, keep order (trending first)
-    targets = list(dict.fromkeys(trending + WATCHLIST))
-    print(f"[Scraper] Scanning {len(targets)} tickers on StockTwits...")
-
-    for ticker in targets:
-        if ticker in TICKER_BLACKLIST:
-            continue
-        messages, labels = _fetch_stocktwits_stream(ticker)
-        if messages:
-            for msg in messages:
-                score = _score_text(msg)
-                raw[ticker].append((score, msg[:150]))
-            st_labels[ticker] = labels
-        time.sleep(random.uniform(0.4, 1.0))
-
-    print(f"[Scraper] Tickers with data: {len(raw)}")
+    """Name kept for pipeline compatibility. Sources sentiment from Finnhub news."""
+    if not FINNHUB_API_KEY:
+        print("[Scraper] ERROR: FINNHUB_API_KEY not set.")
+        return {}
 
     results = {}
-    for ticker, entries in raw.items():
-        if len(entries) < MIN_TICKER_MENTIONS:
+    print(f"[Scraper] Scanning {len(WATCHLIST)} tickers via Finnhub company news...")
+
+    for ticker in WATCHLIST:
+        news = _fetch_company_news(ticker)
+        if len(news) < MIN_NEWS_ARTICLES:
+            time.sleep(0.2)
             continue
-        scores = [s for s, _ in entries]
+
+        # Score the most recent ~20 headlines
+        recent = news[:20]
+        scores = []
+        headlines = []
+        for article in recent:
+            headline = article.get("headline", "")
+            if not headline:
+                continue
+            scores.append(_score_headline(headline))
+            headlines.append(headline)
+
+        if len(scores) < MIN_NEWS_ARTICLES:
+            time.sleep(0.2)
+            continue
+
         avg_score = sum(scores) / len(scores)
         positive_ratio = sum(1 for s in scores if s > 0) / len(scores)
 
-        # Blend VADER with StockTwits' own bull/bear labels if present
-        labels = st_labels.get(ticker, {"bull": 0, "bear": 0})
-        total_labels = labels["bull"] + labels["bear"]
-        if total_labels >= 3:
-            st_ratio = labels["bull"] / total_labels
-            # require both VADER and ST labels to be non-negative
-            positive_ratio = (positive_ratio + st_ratio) / 2
-
         if avg_score < MIN_SENTIMENT_SCORE:
+            time.sleep(0.2)
             continue
-        if positive_ratio < MIN_POSITIVE_RATIO:
-            continue
+
+        # Keep the most positive headlines as sources for the LLM
+        ranked = sorted(zip(scores, headlines), key=lambda x: x[0], reverse=True)
+        top_headlines = [h for _, h in ranked[:5]]
 
         results[ticker] = {
-            "mentions": len(entries),
+            "mentions": len(scores),          # number of news articles
             "sentiment_score": round(avg_score, 4),
             "positive_ratio": round(positive_ratio, 4),
-            "sources": [text for _, text in entries[:5]],
+            "sources": top_headlines,
             "market": "US",
-            "st_bull": labels["bull"],
-            "st_bear": labels["bear"],
+            "article_count": len(news),
         }
+        print(f"[Scraper]   {ticker}: {len(scores)} articles, sentiment {avg_score:+.2f}")
+        time.sleep(0.3)
 
-    results = dict(sorted(results.items(), key=lambda x: x[1]["mentions"], reverse=True))
-    print(f"[Scraper] Tickers passing filters: {len(results)}")
+    # Sort by sentiment strength, then article volume
+    results = dict(sorted(
+        results.items(),
+        key=lambda x: (x[1]["sentiment_score"], x[1]["mentions"]),
+        reverse=True,
+    ))
+    print(f"[Scraper] Tickers with positive news sentiment: {len(results)}")
     return results

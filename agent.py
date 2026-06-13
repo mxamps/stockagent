@@ -3,12 +3,12 @@ import requests
 from config import GROQ_API_KEY, GROQ_MODEL, GROQ_URL, LLM_TIMEOUT
 
 SYSTEM_PROMPT = """You are a cautious, data-driven stock research analyst.
-You receive social media sentiment data and key financial metrics for a stock.
+You receive recent news sentiment data and key financial metrics for a stock.
 Your job is to write a SHORT (150-200 word) analyst note and give a verdict.
 
 Rules:
 - Be honest about risks. Do not hype.
-- Be skeptical of social media hype, especially for small caps with sudden mention spikes.
+- Base your read on the news flow and fundamentals together; don't over-weight a few positive headlines.
 - Base your verdict ONLY on the data provided.
 - Always end with one of exactly these verdicts on its own line:
   VERDICT: BUY
@@ -62,11 +62,11 @@ Research request for: {ticker} ({financials.get('name', ticker)})
 Sector: {financials.get('sector', 'N/A')}
 Market: {sentiment.get('market', 'US')}
 
-=== SOCIAL SENTIMENT ===
-Mentions: {sentiment['mentions']}
-Average sentiment score (VADER, -1 to +1): {sentiment['sentiment_score']}
-Positive mention ratio: {sentiment['positive_ratio']*100:.0f}%
-Sample posts:
+=== NEWS SENTIMENT (last 7 days) ===
+Articles analysed: {sentiment['mentions']}
+Average headline sentiment (-1 to +1): {sentiment['sentiment_score']}
+Positive headline ratio: {sentiment['positive_ratio']*100:.0f}%
+Top headlines:
 {snippets}
 
 === FINANCIALS (Yahoo Finance) ===
@@ -129,7 +129,7 @@ Current financials:
 - Short ratio: {financials.get('short_ratio', 'N/A')}
 - Analyst rec: {financials.get('recommendation', 'N/A')}
 
-Social sentiment trend: {sentiment_trend}
+News sentiment trend: {sentiment_trend}
 
 Should this position be sold? Write a 100-word note.
 End with exactly one of:
